@@ -1,9 +1,9 @@
 from enlace import *
 import time
 import struct
+import numpy as np
 
-# Ajuste a porta correta no seu PC
-serialName = "COM9"  
+serialName = "COM11"  
 
 def main():
     try:
@@ -17,7 +17,6 @@ def main():
         time.sleep(1)
         print("Byte de sacrifício enviado.")
 
-        # Solicita a quantidade de números
         qtd = 0
         while qtd < 5 or qtd > 15:
             qtd = int(input("Quantos números deseja enviar (entre 5 e 15)? "))
@@ -37,17 +36,27 @@ def main():
 
         print(f"Enviando {qtd} números:", numeros)
 
-        # Envia quantidade de números (int32)
+        #enviando quantidade de números
         com1.sendData(struct.pack('!I', qtd))
         time.sleep(0.1)
 
-        # Envia os números em float32
+        #envia os números(Float32)
+        i=0
         for num in numeros:
-            data = struct.pack('!f', num)
-            com1.sendData(data)
+            #data = struct.pack('!f', num)
+            #com1.sendData(data)
+            #time.sleep(0.05)
+            if i == 2:
+                data = struct.pack('!f', num)[:1]
+                com1.sendData(data)
+            else:
+                data = struct.pack('!f', num)
+                com1.sendData(data)
             time.sleep(0.05)
+            
+            i+=1
 
-        # Aguarda resposta do servidor (soma)
+        #espera servidor
         print("Aguardando soma do servidor...")
         start = time.time()
         soma_bytes, nRx = b"", 0
@@ -59,13 +68,13 @@ def main():
             print("Time out: servidor não respondeu.")
         else:
             soma = struct.unpack('!f', soma_bytes)[0]
-            soma_check = sum(numeros)
+            soma_check = np.sum(np.array(numeros, dtype=np.float32))
             print(f"Soma recebida do servidor: {soma:.6f}")
             print(f"Soma calculada localmente: {soma_check:.6f}")
             if abs(soma - soma_check) > 1e-5:
-                print("⚠️ Inconsistência detectada!")
+                print("Resultado inconsistente!")
             else:
-                print("✅ Soma correta!")
+                print("Soma correta!")
 
         print("-------------------------")
         print("Comunicação encerrada")
