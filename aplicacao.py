@@ -34,7 +34,7 @@ def main():
         print(f"Soma calculada: {soma:.6f}")
 
         # Envia a soma de volta (float32)
-        soma_bytes = struct.pack('!f', soma)
+        soma_bytes = struct.pack('>f', soma)
         com1.sendData(soma_bytes)
 
         print("-------------------------")
