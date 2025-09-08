@@ -4,7 +4,7 @@ from enlace import enlace
 from protocol import *
 
 # ajuste a porta do SERVIDOR
-serialName = "COM6"  # exemplo Windows; use sua porta
+serialName = "COM7"  # exemplo Windows; use sua porta
 
 FILES_DIR = "./server_files"  # coloque aqui os arquivos que o cliente pode baixar
 TIMEOUT_ACK = 5.0
@@ -45,6 +45,12 @@ def recv_packet_with_timeout(com, timeout=TIMEOUT_ACK):
     return (h, payload), "ok"
 
 def main():
+    print("-----------------------------------------------------------------------------------")
+    print("┹┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ ▭ ▬▬▬▬▬▬▟ ✩ ▙▬▬▬▬▬▬ ▭ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┲")
+    print("┹┄┄┄┄┄┄┄┄┄┄┄┄┄┄ ▭ Tranferência de Arquivos entre Client e Servidor ▭ ┄┄┄┄┄┄┄┄┄┄┄┄┄┲")
+    print("-----------------------------------------------------------------------------------\n")
+
+
     print("SERVIDOR: abrindo porta", serialName)
     com = enlace(serialName)   # usa sua camada de enlace
     com.enable()               # abre porta + inicia threads RX/TX
@@ -79,8 +85,15 @@ def main():
         com.sendData(build_packet(T_FILELIST, payload=payload))
 
         # 2) Receber N x FILE_REQ ... responder FILE_OK com FILE_ID crescente
+        print("SERVIDOR: esperando seleção de arquivo(s)...")
         next_id = 1
+        i = 0 
+        print("-----------------------------------------------------------------------------------")
+
         while True:
+            # if i==0: 
+            #     print("SERVIDOR: arquivos escolhidos")
+            #     i+=1
             pkt, _ = recv_packet_with_timeout(com, timeout=30)
             if not pkt:
                 print("SERVIDOR: timeout esperando seleção")
@@ -99,10 +112,15 @@ def main():
                 selected.append([file_id, filename, chunks, 0])  # next_seq=0
                 total = len(chunks)
                 com.sendData(build_packet(T_FILEOK, file_id=file_id, total_pkts=total, payload=filename.encode()))
+                print(f"SERVIDOR: arquivo '{filename}' selecionado, id={file_id}, {total} pacotes.")
             elif h["type"] == T_START:
                 com.sendData(build_packet(T_END, payload=b"starting"))
                 time.sleep(0.5)
                 break
+        print("-----------------------------------------------------------------------------------")
+
+
+        
 
         # 3) Loop de transmissão alternada com ACK
         paused = False
@@ -110,16 +128,18 @@ def main():
 
         while len(done) < len(selected):
 
-            # Se estiver pausado entre pacotes, fique lendo comandos até RESUME/ABORT
             while paused:
                 pkt, _ = recv_packet_with_timeout(com, timeout=0.5)
                 if pkt:
                     hh, pl = pkt
                     if hh["type"] == T_RESUME:
                         paused = False
-                        print("SERVIDOR: RESUME")
+                        #print("SERVIDOR: RESUME")
+                        #print("SERVIDOR: Botão de Pause apertado pelo Client: ▌▌ Pause1" )
+                        print("SERVIDOR: Botão de Resume apertado pelo Client: ▶ Resume " )
+
                     elif hh["type"] == T_ABORT:
-                        print("SERVIDOR: ABORT solicitado")
+                        print("SERVIDOR: Botão de Abort apertado pelo Client: ( ͡° ͜ʖ ͡°) Abort" )
                         com.sendData(build_packet(T_END, payload=b"aborted by client"))
                         return
                     # PAUSE repetido ou outros tipos são ignorados aqui
@@ -161,14 +181,14 @@ def main():
                         # Comandos de controle durante a espera
                         if hh["type"] == T_PAUSE:
                             paused = True
-                            print("SERVIDOR: PAUSE")
+                            print("SERVIDOR: Botão de Pause apertado pelo Client: ▌▌ Pause" )
                             # mesmo pausado, ainda precisamos terminar este ciclo de ACK;
                             # o próximo envio só ocorrerá após sair do modo pausa lá em cima
                         elif hh["type"] == T_RESUME:
                             paused = False
-                            print("SERVIDOR: RESUME")
+                            print("SERVIDOR: Botão de Resume apertado pelo Client: ► Resume " )
                         elif hh["type"] == T_ABORT:
-                            print("SERVIDOR: ABORT solicitado")
+                            print("SERVIDOR: Botão de Abort apertado pelo Client: ( ͡° ͜ʖ ͡°) Abort " )
                             com.sendData(build_packet(T_END, payload=b"aborted by client"))
                             return
                         # Outros tipos recebidos aqui são ignorados
@@ -190,7 +210,9 @@ def main():
 
         # 4) Finaliza
         com.sendData(build_packet(T_END, payload=b"done"))
+        print("-----------------------------------------------------------------------------------")
         print("SERVIDOR: transmissão concluída.")
+        print("-----------------------------------------------------------------------------------")
 
     finally:
         com.disable()  # encerra threads e fecha porta
