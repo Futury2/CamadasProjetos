@@ -1,10 +1,11 @@
 # client.py
+import sys 
 import os, time
 from enlace import enlace
 from protocol import *
 
 # ajuste a porta do CLIENTE
-serialName = "COM12"  # troque pela sua
+serialName = "COM9"  # troque pela sua
 
 DOWNLOAD_DIR = "./client_downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -45,7 +46,19 @@ def send_and_wait(com, pkt, expect_types, timeout=TIMEOUT):
         if h["type"] in expect_types:
             return (h, pl), "ok"
 
+def print_progress_bar(filename, received, total, length=40):
+        percent = received/total
+        filled = int(length*percent)
+        bar = "█" * filled + "-" * (length - filled)
+        sys.stdout.write(f"\rArquivo {filename}: |{bar}| {percent:.0%} ({received}/{total} pacotes)")
+        sys.stdout.flush()
+        if received == total:
+            print()
 def main():
+    print("-----------------------------------------------------------------------------------")
+    print("┹┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ ▭ ▬▬▬▬▬▬▟ ✩ ▙▬▬▬▬▬▬ ▭ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┲")
+    print("┹┄┄┄┄┄┄┄┄┄┄┄┄┄┄ ▭ Tranferência de Arquivos entre Client e Servidor ▭ ┄┄┄┄┄┄┄┄┄┄┄┄┄┲")
+    print("-----------------------------------------------------------------------------------\n")
     print("CLIENTE: abrindo porta", serialName)
     com = enlace(serialName)
     com.enable()
@@ -95,6 +108,7 @@ def main():
             print("CLIENTE: falha ao iniciar download:", why)
             return
         (h_end, pl_end) = resp
+        print("-----------------------------------------------------------------------------------")
         print("Servidor:", pl_end.decode(errors="ignore"))
 
         # pequena pausa para garantir que o servidor não dispare DATA antes do cliente estar pronto
@@ -107,6 +121,7 @@ def main():
         finished = set()
 
         print("\nBaixando... (P=pausa, R=resume, Q=abort)")
+        print("-----------------------------------------------------------------------------------")
         import threading, sys
 
         ctrl = {"paused": False, "aborted": False}
@@ -116,15 +131,18 @@ def main():
                 if k == "p":
                     com.sendData(build_packet(T_PAUSE))
                     ctrl["paused"] = True
-                    print("[CLIENTE] PAUSE enviado")
+                    print("CLIENTE: PAUSE enviado")
+                    print("-----------------------------------------------------------------------------------")
                 elif k == "r":
                     com.sendData(build_packet(T_RESUME))
                     ctrl["paused"] = False
-                    print("[CLIENTE] RESUME enviado")
+                    print("CLIENTE: RESUME enviado")
+                    print("-----------------------------------------------------------------------------------")
                 elif k == "q":
                     com.sendData(build_packet(T_ABORT))
                     ctrl["aborted"] = True
-                    print("[CLIENTE] ABORT enviado")
+                    print("CLIENTE: ABORT enviado")
+                    print("-----------------------------------------------------------------------------------")
                     break
         threading.Thread(target=key_thread, daemon=True).start()
 
@@ -139,18 +157,23 @@ def main():
                 # (cheque duplicados, se quiser, pelo seq)
                 buffers[fid].extend(payload)
                 pkts_count[fid] += 1
+                # Atualiza barra de progresso
+                print_progress_bar(id_to_name[fid], pkts_count[fid], h["total_pkts"])
                 # ACK
                 com.sendData(build_packet(T_ACK, file_id=fid, seq=seq))
                 if (h["flags"] & FLAG_LAST) != 0:
                     finished.add(fid)
                     print(f"CLIENTE: arquivo {id_to_name[fid]} finalizado ({pkts_count[fid]} pacotes)")
+                    print("-----------------------------------------------------------------------------------")
             elif h["type"] == T_END:
                 # servidor pode avisar erro/encerramento
+                print("-----------------------------------------------------------------------------------")
                 print("Servidor:", payload.decode(errors="ignore"))
                 if payload != b"done":
                     break
 
         # 4) salvar arquivos e resumo
+        print("-----------------------------------------------------------------------------------")
         print("\nResumo:")
         total_bytes = 0
         for fid, name in id_to_name.items():
@@ -163,6 +186,7 @@ def main():
 
     finally:
         com.disable()
+    
 
 if __name__ == "__main__":
     main()
