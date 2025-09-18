@@ -47,6 +47,7 @@ def checksum16(data: bytes) -> int:
 #cria o cabeçalho do pacote
 #recebe todas as informações necessárias e empacota em um cabeçalho
 def pack_header(tp, file_id, seq, total_pkts, payload_len, flags, payload):
+    
     # checksum é calculado com campo checksum=0
     # ceda letra represeta um campo do cabeçalho
     cks = checksum16(payload) #check sum é calculado antes, por isso ele é 0 temporariamente, pois ele não deve fazer parte do cálculo
