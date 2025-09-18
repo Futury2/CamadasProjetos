@@ -1,10 +1,11 @@
 # server.py
 import os, time
-from enlace import enlace
+from enlace import enlace 
 from protocol import *
+from datetime import datetime
 
 # ajuste a porta do SERVIDOR
-serialName = "COM7"  # exemplo Windows; use sua porta
+serialName = "COM6"  # exemplo Windows; use sua porta
 
 FILES_DIR = "./server_files"  # coloque aqui os arquivos que o cliente pode baixar
 TIMEOUT_ACK = 5.0
@@ -26,6 +27,19 @@ def wait_bytes_with_timeout(com, needed, timeout):
         time.sleep(0.02)
     return None  # timeout
 
+def log_event(direction, header, payload=b""):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    msg_type = header["type"]
+    total_size = HEADER_SIZE + len(payload) + len(EOP)
+
+    line = f"{ts} / {direction} / {msg_type} / {total_size}"
+
+    if msg_type == T_DATA:
+        line += f" / {header['seq']+1} / {header['total_pkts']} / {header['checksum']:04X}"
+
+    with open("server_log.txt", "a") as f:
+        f.write(line + "\n")
+
 def recv_packet_with_timeout(com, timeout=TIMEOUT_ACK):
     # tenta ler header
     hdr = wait_bytes_with_timeout(com, HEADER_SIZE, timeout)
@@ -41,7 +55,12 @@ def recv_packet_with_timeout(com, timeout=TIMEOUT_ACK):
     eop = bytes(rest[-len(EOP):])
     ok, msg, _ = verify_packet(hdr, payload, eop)
     if not ok:
+        if "CRC" in msg:
+            com.sendData(build_packet(T_ACK, file_id=h["file_id"], seq=h["seq"]))
+            err_header = {"type": T_ACK, "file_id": h["file_id"], "seq": h["seq"], "total_pkts": h["total_pkts"], "payload_len": 0, "checksum": 0, "flags": 0}
+            log_event("envio", err_header)
         return None, msg
+    log_event("receb", h, payload)
     return (h, payload), "ok"
 
 def main():
@@ -84,7 +103,10 @@ def main():
 
         names = list_files()
         payload = ("|".join(names)).encode()
-        com.sendData(build_packet(T_FILELIST, payload=payload))
+        pkt_bytes = build_packet(T_FILELIST, payload=payload)
+        com.sendData(pkt_bytes)
+        h = parse_header(pkt_bytes[:HEADER_SIZE])
+        log_event("envio", h, payload)
 
         # 2) Receber N x FILE_REQ ... responder FILE_OK com FILE_ID crescente
         print("SERVIDOR: esperando seleção de arquivo(s)...")
@@ -106,6 +128,8 @@ def main():
                 if filename not in names:
                     # manda END com erro simples
                     com.sendData(build_packet(T_END, payload=b"file not found"))
+                    hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                    log_event("envio", hh, b"file not found")
                     return
                 file_id = next_id
                 next_id += 1
@@ -114,9 +138,14 @@ def main():
                 selected.append([file_id, filename, chunks, 0])  # next_seq=0
                 total = len(chunks)
                 com.sendData(build_packet(T_FILEOK, file_id=file_id, total_pkts=total, payload=filename.encode()))
+                hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                log_event("envio", hh, filename.encode())
                 print(f"SERVIDOR: arquivo '{filename}' selecionado, id={file_id}, {total} pacotes.")
             elif h["type"] == T_START:
                 com.sendData(build_packet(T_END, payload=b"starting"))
+                hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                log_event("envio", hh, b"starting")
+
                 time.sleep(0.5)
                 break
         print("-----------------------------------------------------------------------------------")
@@ -143,6 +172,8 @@ def main():
                     elif hh["type"] == T_ABORT:
                         print("SERVIDOR: Botão de Abort apertado pelo Client: ( ͡° ͜ʖ ͡°) Abort" )
                         com.sendData(build_packet(T_END, payload=b"aborted by client"))
+                        hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                        log_event("envio", hh, b"aborted by client")
                         return
                     # PAUSE repetido ou outros tipos são ignorados aqui
 
@@ -166,6 +197,8 @@ def main():
                     flags=flags
                 )
                 com.sendData(pkt_bytes)
+                hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                log_event("envio", hh, payload)
 
                 # espera ACK desse pacote, com timeout e retransmissão
                 retx = 0
@@ -192,15 +225,21 @@ def main():
                         elif hh["type"] == T_ABORT:
                             print("SERVIDOR: Botão de Abort apertado pelo Client: ( ͡° ͜ʖ ͡°) Abort " )
                             com.sendData(build_packet(T_END, payload=b"aborted by client"))
+                            hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                            log_event("envio", hh, b"aborted by client")
                             return
                         # Outros tipos recebidos aqui são ignorados
                     else:
                         # timeout -> retransmite o mesmo pacote
                         retx += 1
                         com.sendData(pkt_bytes)
+                        hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                        log_event("envio", hh, payload)
 
                 if not ack_ok:
                     com.sendData(build_packet(T_END, payload=b"too many timeouts"))
+                    hh = parse_header(pkt_bytes[:HEADER_SIZE])
+                    log_event("envio", hh, b"too many timeouts")
                     print("SERVIDOR: encerrando por excesso de timeouts aguardando ACK.")
                     return
 
@@ -212,6 +251,8 @@ def main():
 
         # 4) Finaliza
         com.sendData(build_packet(T_END, payload=b"done"))
+        hh = parse_header(pkt_bytes[:HEADER_SIZE])
+        log_event("envio", hh, b"done")
         print("-----------------------------------------------------------------------------------")
         print("SERVIDOR: transmissão concluída.")
         print("-----------------------------------------------------------------------------------")
